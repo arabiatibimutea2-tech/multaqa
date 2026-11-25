@@ -156,6 +156,23 @@ textarea.input{min-height:120px;resize:vertical}
 .toast{position:fixed;bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);z-index:60;background:var(--ink);color:#fff;border-radius:999px;padding:10px 12px 10px 18px;display:flex;align-items:center;gap:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
 .toast button{background:rgba(255,255,255,.15);color:#fff;border-radius:999px;padding:6px 14px;font-weight:800}
 
+.wheel-wrap{position:fixed;inset:0;z-index:45;background:linear-gradient(180deg,#e8f5fe,#fdf6e3);overflow-y:auto;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(24px + env(safe-area-inset-bottom,0px))}
+.wheel-top{display:flex;align-items:center;gap:8px;max-width:560px;margin:0 auto 8px}
+.wheel-top h2{margin:0;flex:1;font-size:24px}
+.wheel-box{position:relative;width:min(92vw,440px);margin:6px auto 0}
+.wheel-box svg{display:block;width:100%;height:auto}
+.wheel-pointer{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:18px solid transparent;border-right:18px solid transparent;border-top:34px solid #e11d48;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));z-index:2}
+.wheel-now{text-align:center;font-weight:800;font-size:26px;min-height:40px;margin:10px 0 4px}
+.wheel-ctrl{max-width:440px;margin:0 auto;display:grid;gap:10px}
+.spin-btn{font-size:26px;padding:14px;min-height:60px;background:var(--gold);color:var(--ink)}
+.picked-list{display:flex;flex-wrap:wrap;gap:6px}
+.picked-list button{display:flex;align-items:center;gap:6px;background:#fff;border-radius:999px;padding:4px 12px 4px 4px;font-weight:700;font-size:14px;box-shadow:var(--shadow)}
+.win{position:fixed;inset:0;z-index:50;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.win-card{background:#fff;border-radius:28px;padding:24px;width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;animation:up .25s ease-out}
+.win-card .wn{font-size:40px;font-weight:800;line-height:1.2;word-break:break-word}
+.win-card .row{width:100%}
+.win-card .row .btn{flex:1;min-height:56px;font-size:19px}
 @media (min-width:700px){.grid{grid-template-columns:repeat(auto-fill,minmax(136px,1fr))}}
 @media print{
   header,nav.tabs,.no-print,.toast{display:none!important}
@@ -177,6 +194,7 @@ textarea.input{min-height:120px;resize:vertical}
   <button data-act="tab" data-tab="results"><span class="ic">📊</span>النتائج</button>
   <button data-act="tab" data-tab="settings"><span class="ic">⚙️</span>الإعدادات</button>
 </nav>
+<div id="wheelRoot"></div>
 <div id="sheetRoot"></div>
 <div id="toastRoot"></div>
 <input type="file" id="photoInput" accept="image/*" hidden>
@@ -224,6 +242,7 @@ function normalize(d) {
     id: String(c.id || uid()), name: String(c.name || 'صف'),
     students: (c.students || []).map(s => ({ id: String(s.id || uid()), name: String(s.name || ''), photo: typeof s.photo === 'string' ? s.photo : null })).filter(s => s.name),
     events: Array.isArray(c.events) ? c.events.filter(e => e && e.s && e.c && e.t) : [],
+    wheel: c.wheel && typeof c.wheel.date === 'string' && Array.isArray(c.wheel.picked) ? { date: c.wheel.date, picked: c.wheel.picked.map(String) } : null,
   }));
   if (!out.classes.length) out.classes = [newClass('صفي الأول')];
   out.currentId = out.classes.some(c => c.id === d.currentId) ? d.currentId : out.classes[0].id;
@@ -373,7 +392,7 @@ function renderRate() {
     extra = `<button class="btn soft" data-act="allPresent">✅ الكل حاضر</button>`;
   }
   const bar = `<div class="mode-bar"><p class="hint">${hint}</p><div class="row">${extra}
-    <button class="btn ghost" data-act="random" title="اختيار طالب عشوائي">🎲 اختيار عشوائي</button></div></div>`;
+    <button class="btn ghost" data-act="openWheel">🎡 عجلة المشاركة</button></div></div>`;
 
   const { a, b } = range(state.period, 0);
   const st = Object.fromEntries(stats(c, a, b).map(x => [x.s.id, x]));
@@ -681,6 +700,128 @@ function importText(txt) {
 }
 
 /* =====================================================================
+   عجلة المشاركة
+   ===================================================================== */
+const WHEEL_COLORS = ['#7cc8f7','#ffd66b','#8fe0b0','#f9a8c9','#c4b5fd','#fdba8c','#99e2e0','#fde68a'];
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const wheel = { rot: 0, spinning: false, winner: null, sound: (() => { try { return localStorage.getItem('multaqa-wheel-sound') !== '0'; } catch (e) { return true; } })() };
+
+function wheelState(c) {
+  const today = dayKey(Date.now());
+  if (!c.wheel || c.wheel.date !== today) c.wheel = { date: today, picked: [] };
+  c.wheel.picked = c.wheel.picked.filter(id => c.students.some(s => s.id === id));
+  return c.wheel;
+}
+// الغائبون اليوم لا يظهرون في العجلة، ومن شارك اليوم يخرج منها
+function wheelPool(c) { const w = wheelState(c); return c.students.filter(s => !w.picked.includes(s.id) && todayStatus(c, s.id) !== 'a'); }
+// نقطة العجلة تذهب لمعيار «المشاركة» إن كان مفعّلاً، وإلا لأول معيار نقاط مفعّل
+function wheelCriterion() { const pcs = pointCriteria(); return pcs.find(x => x.id === 'part') || pcs[0] || null; }
+
+function wheelSVG(items) {
+  const n = items.length, R = 240, C = 250;
+  const pt = (deg, r) => { const a = deg * Math.PI / 180; return [C + r * Math.sin(a), C - r * Math.cos(a)]; };
+  const seg = 360 / Math.max(1, n);
+  const maxFs = n === 1 ? 44 : Math.max(14, Math.min(40, 2 * Math.PI * 150 / n * .75));
+  let slices = '', labels = '';
+  items.forEach((s, i) => {
+    const color = WHEEL_COLORS[i % WHEEL_COLORS.length];
+    if (n === 1) slices += `<circle cx="${C}" cy="${C}" r="${R}" fill="${color}"/>`;
+    else {
+      const [x1, y1] = pt(i * seg, R), [x2, y2] = pt((i + 1) * seg, R);
+      slices += `<path d="M${C},${C} L${x1},${y1} A${R},${R} 0 ${seg > 180 ? 1 : 0} 1 ${x2},${y2} Z" fill="${color}" stroke="#fff" stroke-width="3"/>`;
+    }
+    const name = s.name.length > 16 ? s.name.slice(0, 15) + '…' : s.name;
+    const fs = Math.max(13, Math.min(maxFs, (R - 70) / (name.length * .55)));
+    // أسماء النصف الأيسر تُقلب حتى لا تظهر مقلوبة
+    const mid = (i + .5) * seg, flip = n > 1 && mid > 180;
+    labels += `<text transform="rotate(${flip ? mid + 90 : mid - 90} ${C} ${C})" x="${flip ? C - R + 18 : C + R - 18}" y="${C}" text-anchor="${flip ? 'start' : 'end'}" dominant-baseline="central"
+      font-family="'Baloo Bhaijaan 2',Tajawal,sans-serif" font-weight="800" font-size="${fs.toFixed(1)}" fill="#132036"
+      stroke="#fff" stroke-width="${Math.max(3, fs * .2).toFixed(1)}" stroke-linejoin="round" paint-order="stroke">${esc(name)}</text>`;
+  });
+  return `<svg viewBox="0 0 500 500" style="direction:ltr" role="img" aria-label="عجلة فيها ${n} أسماء">
+    <circle cx="${C}" cy="${C}" r="${R + 8}" fill="#fff"/>
+    <g id="wheelG" style="transform-origin:250px 250px;transform:rotate(${wheel.rot}deg)">${slices}${labels}</g>
+    <circle cx="${C}" cy="${C}" r="30" fill="#fff" stroke="#ffd66b" stroke-width="6"/>
+    <text x="${C}" y="${C}" text-anchor="middle" dominant-baseline="central" font-size="26">⭐</text></svg>`;
+}
+
+function drawWheel() {
+  const c = cls(); const pool = wheelPool(c); const w = wheelState(c);
+  const picked = w.picked.map(id => c.students.find(s => s.id === id)).filter(Boolean);
+  const absent = c.students.filter(s => todayStatus(c, s.id) === 'a').length;
+  const pc = wheelCriterion();
+  let body;
+  if (!c.students.length) body = `<div class="card empty"><div class="big">🎡</div><p>أضيفي طلاباً أولاً.</p></div>`;
+  else if (!pool.length) body = `<div class="card empty"><div class="big">🎉</div><h2 style="justify-content:center">شارك الجميع اليوم!</h2>
+      <button class="btn" data-act="wheelReset">🔄 إرجاع كل الأسماء للعجلة</button></div>`;
+  else body = `<div class="wheel-box"><div class="wheel-pointer"></div>${wheelSVG(pool)}</div>
+      <div class="wheel-now display" id="wheelNow" aria-live="polite"></div>
+      <div class="wheel-ctrl"><button class="btn spin-btn display" data-act="spin" ${wheel.spinning ? 'disabled' : ''}>🎡 أديري العجلة</button>
+        <p class="hint" style="text-align:center;margin:0">في العجلة ${pool.length} من ${c.students.length}${absent ? ` · الغائبون اليوم (${absent}) خارج العجلة` : ''}${pc ? ` · المشاركة تضيف +1 في «${esc(pc.name)}»` : ''}</p></div>`;
+  const pickedHtml = picked.length ? `<div class="card" style="max-width:440px;margin:16px auto 0"><h2>✅ شاركوا اليوم (${picked.length})</h2>
+      <p class="hint">اضغطي على الاسم لإرجاعه إلى العجلة.</p>
+      <div class="picked-list">${picked.map(s => `<button data-act="unpick" data-id="${s.id}">${avatar(s, 28)}${esc(s.name)} ↩</button>`).join('')}</div>
+      ${pool.length ? `<button class="btn ghost" data-act="wheelReset" style="margin-top:10px">🔄 إرجاع الجميع</button>` : ''}</div>` : '';
+  const win = wheel.winner ? `<div class="win"><div class="win-card" role="dialog" aria-modal="true" aria-label="دور ${esc(wheel.winner.name)}">
+      <div style="font-weight:800;color:var(--warn)">دور المشاركة الآن</div>${avatar(wheel.winner, 130)}
+      <div class="wn display">${esc(wheel.winner.name)}</div>
+      <div class="row"><button class="btn good" data-act="winYes">✅ شارك${pc ? ' +1' : ''}</button>
+        <button class="btn ghost" data-act="winNo">↩️ لم يشارك</button></div>
+      <button class="btn ghost" data-act="winOut" style="font-size:15px;min-height:40px">إخراجه من العجلة اليوم بدون نقطة</button></div></div>` : '';
+  $('#wheelRoot').innerHTML = `<div class="wheel-wrap" role="dialog" aria-modal="true" aria-label="عجلة المشاركة">
+    <div class="wheel-top"><h2 class="display">🎡 عجلة المشاركة</h2>
+      <button class="icon-btn" data-act="wheelSound" aria-label="الصوت" aria-pressed="${wheel.sound}">${wheel.sound ? '🔊' : '🔇'}</button>
+      <button class="x" data-act="closeWheel" aria-label="إغلاق" style="margin:0">✕</button></div>
+    ${body}${pickedHtml}${win}</div>`;
+}
+
+let audioCtx = null;
+function beep(freq = 900, dur = .04, vol = .08) {
+  if (!wheel.sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'triangle'; o.frequency.value = freq; g.gain.value = vol;
+    g.gain.exponentialRampToValueAtTime(1e-4, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+function spinWheel() {
+  const c = cls(); const pool = wheelPool(c); if (wheel.spinning || !pool.length) return;
+  const n = pool.length, seg = 360 / n, idx = Math.floor(Math.random() * n);
+  const target = (idx + .5) * seg + (Math.random() - .5) * seg * .6;      // نقطة داخل شريحة الفائز
+  const cur = ((wheel.rot % 360) + 360) % 360;
+  const delta = ((360 - target - cur) % 360 + 360) % 360;                  // ما يلزم لتصل النقطة إلى المؤشر في الأعلى
+  const ms = reduceMotion ? 700 : 5200;
+  wheel.rot += (reduceMotion ? 360 : 360 * 6) + delta;
+  wheel.spinning = true;
+  const g = $('#wheelG'), now = $('#wheelNow'), btn = document.querySelector('[data-act=spin]');
+  btn.disabled = true;
+  g.style.transition = `transform ${ms}ms cubic-bezier(.15,.75,.12,1)`;
+  requestAnimationFrame(() => { g.style.transform = `rotate(${wheel.rot}deg)`; });
+  if (wheel.sound && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  let last = -1, lastBeep = 0, raf;
+  const tick = () => {
+    const m = getComputedStyle(g).transform;
+    if (m && m !== 'none') {
+      const v = m.slice(m.indexOf('(') + 1, -1).split(',').map(Number);
+      const ang = Math.atan2(v[1], v[0]) * 180 / Math.PI;
+      const i = Math.min(n - 1, Math.floor((((-ang) % 360) + 360) % 360 / seg));
+      if (i !== last) { last = i; now.textContent = pool[i].name; const t = performance.now(); if (!reduceMotion && t - lastBeep > 45) { lastBeep = t; beep(760 + (i % 2) * 160); } }
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  setTimeout(() => {
+    cancelAnimationFrame(raf); wheel.spinning = false;
+    wheel.winner = pool[idx]; now.textContent = pool[idx].name;
+    beep(660, .12, .12); setTimeout(() => beep(990, .2, .12), 120);
+    setTimeout(drawWheel, 350);
+  }, ms + 80);
+}
+
+/* =====================================================================
    التنبيهات
    ===================================================================== */
 let toastTimer;
@@ -723,13 +864,21 @@ const actions = {
     c.students.forEach(s => { if (!todayStatus(c, s.id)) { setAttendance(s.id, 'p'); n++; } });
     render(); toast(n ? `سُجّل ${n} طالب حاضرين` : 'كل الطلاب مسجلون بالفعل');
   },
-  random: () => {
-    const c = cls(); const pool = c.students.filter(s => todayStatus(c, s.id) !== 'a');
-    if (!pool.length) return;
-    const s = pool[Math.floor(Math.random() * pool.length)]; ui.picked = s.id; render();
-    document.querySelector(`.stu[data-id="${s.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    toast('🎲 ' + s.name);
+  openWheel: () => { wheel.rot = 0; wheel.winner = null; drawWheel(); },
+  closeWheel: () => { if (wheel.spinning) return; $('#wheelRoot').innerHTML = ''; render(); },
+  spin: () => spinWheel(),
+  wheelSound: () => { wheel.sound = !wheel.sound; try { localStorage.setItem('multaqa-wheel-sound', wheel.sound ? '1' : '0'); } catch (e) {} drawWheel(); },
+  winYes: () => {
+    const s = wheel.winner; const w = wheelState(cls()); if (!w.picked.includes(s.id)) w.picked.push(s.id);
+    const pc = wheelCriterion(); let e = null;
+    if (pc) e = addEvent(s.id, pc.id, 1); else save();
+    wheel.winner = null; wheel.rot = 0; drawWheel();
+    toast(pc ? `+1 ${pc.name} · ${s.name}` : `شارك ${s.name}`, () => { if (e) undoEvent(e.id); const ww = wheelState(cls()); ww.picked = ww.picked.filter(x => x !== s.id); save(); drawWheel(); });
   },
+  winNo: () => { wheel.winner = null; wheel.rot = 0; drawWheel(); },
+  winOut: () => { const w = wheelState(cls()); w.picked.push(wheel.winner.id); save(); wheel.winner = null; wheel.rot = 0; drawWheel(); },
+  unpick: el => { const w = wheelState(cls()); w.picked = w.picked.filter(x => x !== el.dataset.id); save(); wheel.rot = 0; drawWheel(); },
+  wheelReset: () => { const w = wheelState(cls()); w.picked = []; save(); wheel.rot = 0; drawWheel(); },
   pt: el => {
     const e = addEvent(el.dataset.id, el.dataset.c, +el.dataset.d); refreshSheet(); render();
     toast(`${signed(e.d)} ${crit(e.c).name}`, () => undoEvent(e.id));
@@ -840,12 +989,13 @@ document.addEventListener('click', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && sheetFn) return closeSheet();
+  if (ev.key === 'Escape' && $('#wheelRoot').innerHTML && !wheel.spinning) return actions.closeWheel();
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches('.stu, tr.click')) { ev.preventDefault(); ev.target.click(); }
 });
 document.addEventListener('change', ev => {
   if (ev.target.dataset.change === 'weekStart') { state.weekStart = +ev.target.value; save(); render(); }
 });
-$('#classPick').addEventListener('change', ev => { state.currentId = ev.target.value; ui.picked = null; save(); render(); });
+$('#classPick').addEventListener('change', ev => { state.currentId = ev.target.value; ui.picked = null; $('#wheelRoot').innerHTML = ''; save(); render(); });
 $('#photoInput').addEventListener('change', async ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
   try { editPhoto = await resizeImage(f); refreshSheet(); restoreName(); } catch (e) { toast('تعذّر فتح الصورة'); }
