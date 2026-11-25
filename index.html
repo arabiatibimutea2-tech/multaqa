@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ملتقى تقييم الطلاب</title>
+<title>التميز لتقييم الطلاب</title>
 <meta name="theme-color" content="#7c5cff">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.webmanifest">
@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="ملتقى">
+<meta name="apple-mobile-web-app-title" content="التميز">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+Bhaijaan+2:wght@600;700;800&family=Tajawal:wght@400;500;700;800&display=swap">
 <script>if('serviceWorker' in navigator) addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
 <style>
@@ -273,7 +273,7 @@ nav.tabs button[aria-current="page"]{background:var(--grad);color:#fff;box-shado
 </head>
 <body>
 <header>
-  <div class="ttl"><div class="greet" id="greet"></div><h1 class="display">ملتقى ✨</h1></div>
+  <div class="ttl"><div class="greet" id="greet"></div><h1 class="display">التميز ✨</h1></div>
   <select class="class-pick" id="classPick" aria-label="اختيار الصف"></select>
 </header>
 <main id="main"></main>
@@ -509,7 +509,7 @@ function renderRate() {
   const c = cls();
   if (!c.students.length) {
     return `<div class="hero-card" style="text-align:center;padding:26px 16px"><div style="font-size:60px">👩‍🏫</div>
-      <h2 class="display" style="margin:6px 0">أهلاً بكِ في ملتقى!</h2>
+      <h2 class="display" style="margin:6px 0">أهلاً بكِ في التميز!</h2>
       <p style="margin:0 0 14px;font-weight:700">ابدئي بإضافة طلاب ${esc(c.name)}، ثم صورة كل طالب إن رغبتِ.</p>
       <button class="btn big" data-act="addStudents">➕ إضافة طلاب</button></div>`;
   }
