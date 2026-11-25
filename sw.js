@@ -1,5 +1,5 @@
 // غيّري رقم النسخة عند كل تحديث للتطبيق حتى يصل التحديث لكل من ثبّته
-const VERSION = 'multaqa-v1';
+const VERSION = 'multaqa-v2';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
